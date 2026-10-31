@@ -6,11 +6,12 @@ import {
   buildGoogleFlightsUrl
 } from './urlBuilder.js';
 import { applyBaggagePolicy, parseDurationHours } from './baggage.js';
+import { DEFAULTS, originForQuery, resolveOrigin } from '../config.js';
 
 const REQUEST_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept-Language': 'en-GB,en;q=0.9',
+  'Accept-Language': 'en-US,en;q=0.9',
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
 };
 
@@ -54,7 +55,7 @@ function buildQueryUrl(
       ? `${cabinClass.replace(/_/g, ' ')} flights to `
       : 'Flights to ';
   const queryStr = `${cabinPrefix}${destination} from ${originQuery} on ${departureDate} through ${returnDate} ${passengers} adults ${nonstop ? 'nonstop' : ''}`.trim();
-  return `https://www.google.com/travel/flights?q=${encodeURIComponent(queryStr)}&curr=${currency}&hl=en-GB`;
+  return `https://www.google.com/travel/flights?q=${encodeURIComponent(queryStr)}&curr=${currency}&hl=en`;
 }
 
 function extractFlightSegments(html: string): FlightSegment[] {
@@ -96,14 +97,15 @@ async function fetchAndParse(
   const segments = extractFlightSegments(html);
   const out: RawFlight[] = [];
 
-  // Primary parser using rich accessibility labels
+  // Primary parser using rich accessibility labels, e.g.
+  // "From 245 British pounds round trip total." / "From 1,234 US dollars round trip total."
   const ariaRegex =
-    /aria-label="From\s+([\d,]+)\s+British pounds round trip total\..*?Select flight"/gi;
+    /aria-label="From\s+[\d,.]+\s+[A-Za-z .]+?\s+round trip total\..*?Select flight"/gi;
   let match;
 
   while ((match = ariaRegex.exec(html)) !== null) {
     const fullLabel = match[0];
-    const priceMatch = fullLabel.match(/From\s+([\d,]+)\s+British pounds/i);
+    const priceMatch = fullLabel.match(/From\s+([\d,]+)(?:\.\d+)?\s+[A-Za-z .]+?\s+round trip total/i);
     const airlineMatch = fullLabel.match(/(?:flight with|with)\s+([A-Za-z0-9\s&]+?)\.\s+Leaves/i);
     const leavesMatch = fullLabel.match(/Leaves\s+([A-Za-z0-9.\s]+Airport)\s+at\s+([0-9:]+)/i);
     const arrivesMatch = fullLabel.match(/arrives at\s+([A-Za-z0-9.\s]+Airport)\s+at\s+([0-9:]+)/i);
@@ -141,20 +143,20 @@ async function fetchAndParse(
 }
 
 export async function searchFlights(params: FlightSearchParams): Promise<FlightOption[]> {
-  const origin = params.origin || 'LON';
+  const origin = resolveOrigin(params.origin);
   const destination = params.destination.trim();
   const departureDate = params.departureDate;
   const returnDate = params.returnDate;
-  const passengers = params.passengers || 2;
-  const directOnly = params.directOnly !== undefined ? params.directOnly : true;
-  const currency = params.currency || 'GBP';
-  const checkedBags = params.checkedBags !== undefined ? params.checkedBags : true;
+  const passengers = params.passengers || DEFAULTS.adults;
+  const directOnly = params.directOnly ?? DEFAULTS.directOnly;
+  const currency = (params.currency || DEFAULTS.currency).toUpperCase();
+  const checkedBags = params.checkedBags ?? DEFAULTS.checkedBags;
   const cabinClass: CabinClass = params.cabinClass || 'economy';
   const aircraftFilter = params.aircraftFilter?.map((a) => a.toLowerCase().trim());
   const minDurationHours = params.minDurationHours;
 
   // Origin display for search query
-  const originQuery = origin === 'LON' ? 'London' : origin;
+  const originQuery = originForQuery(origin);
   const url = buildQueryUrl(
     destination,
     originQuery,
@@ -277,16 +279,16 @@ export async function searchFlights(params: FlightSearchParams): Promise<FlightO
         duration: f.duration,
         durationHours: f.durationHours,
         isDirect: f.isDirect,
-        baseFareTotalGbp: f.rawPrice,
-        totalPriceGbp: f.rawPrice,
-        pricePerPersonGbp: Math.round(f.rawPrice / passengers),
-        currency: 'GBP',
+        baseFareTotal: f.rawPrice,
+        totalPrice: f.rawPrice,
+        pricePerPerson: Math.round(f.rawPrice / passengers),
+        currency,
         bookingLinks
       };
     });
 
     // Adds checked-bag cost (if enabled) and sorts cheapest first
-    return applyBaggagePolicy(flightOptions, passengers, checkedBags);
+    return applyBaggagePolicy(flightOptions, passengers, checkedBags, currency);
   } catch (error) {
     console.error('Error during flight search:', error);
     return [];

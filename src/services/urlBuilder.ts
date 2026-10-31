@@ -1,4 +1,5 @@
 import { MultiPlatformBookingLinks, CabinClass } from '../types.js';
+import { originForQuery } from '../config.js';
 
 export function formatDateYYMMDD(dateStr: string): string {
   // Convert YYYY-MM-DD -> YYMMDD
@@ -19,13 +20,13 @@ export function formatDateDDMMYYYY(dateStr: string): string {
 }
 
 export function buildSkyscannerFlightUrl(
-  origin: string = 'LON',
+  origin: string,
   destination: string,
   departureDate: string,
   returnDate: string,
-  passengers: number = 2,
-  directOnly: boolean = true,
-  currency: string = 'GBP',
+  passengers: number = 1,
+  directOnly: boolean = false,
+  currency: string = 'USD',
   cabinClass: CabinClass = 'economy'
 ): string {
   const orig = origin.toLowerCase();
@@ -39,19 +40,19 @@ export function buildSkyscannerFlightUrl(
 }
 
 export function buildGoogleFlightsUrl(
-  origin: string = 'London',
+  origin: string,
   destination: string,
   departureDate: string,
   returnDate: string,
-  passengers: number = 2,
-  directOnly: boolean = true,
-  currency: string = 'GBP',
+  passengers: number = 1,
+  directOnly: boolean = false,
+  currency: string = 'USD',
   cabinClass: CabinClass = 'economy'
 ): string {
   const stopsQuery = directOnly ? 'nonstop' : '';
   const prefix = cabinClass && cabinClass !== 'economy' ? `${cabinClass.replace(/_/g, ' ')} flights to ` : 'Flights to ';
   const q = `${prefix}${destination} from ${origin} on ${departureDate} through ${returnDate} ${passengers} adults ${stopsQuery}`.trim();
-  return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}&curr=${currency}&hl=en-GB`;
+  return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}&curr=${currency}&hl=en`;
 }
 
 /**
@@ -59,13 +60,13 @@ export function buildGoogleFlightsUrl(
  * so displayed prices include checked-bag fees. Only built for IATA codes (e.g. LON, JFK).
  */
 export function buildKayakFlightUrl(
-  origin: string = 'LON',
+  origin: string,
   destination: string,
   departureDate: string,
   returnDate: string,
-  passengers: number = 2,
-  directOnly: boolean = true,
-  checkedBags: boolean = true,
+  passengers: number = 1,
+  directOnly: boolean = false,
+  checkedBags: boolean = false,
   cabinClass: CabinClass = 'economy'
 ): string | undefined {
   const dest = destination.trim().toUpperCase();
@@ -74,16 +75,16 @@ export function buildKayakFlightUrl(
   const cabinCode = cabinClass === 'business' ? 'b' : cabinClass === 'first' ? 'f' : cabinClass === 'premium_economy' ? 'p' : 'e';
   const filters = [directOnly ? 'stops=0' : '', checkedBags ? 'bfc=1' : '', `cabin=${cabinCode}`].filter(Boolean).join(';');
   const fs = filters ? `&fs=${filters}` : '';
-  return `https://www.kayak.co.uk/flights/${orig}-${dest}/${departureDate}/${returnDate}/${passengers}adults?sort=price_a${fs}`;
+  return `https://www.kayak.com/flights/${orig}-${dest}/${departureDate}/${returnDate}/${passengers}adults?sort=price_a${fs}`;
 }
 
 export function buildExpediaFlightUrl(
-  origin: string = 'LON',
+  origin: string,
   destination: string,
   departureDate: string,
   returnDate: string,
-  passengers: number = 2,
-  directOnly: boolean = true,
+  passengers: number = 1,
+  directOnly: boolean = false,
   cabinClass: CabinClass = 'economy'
 ): string {
   const depFormatted = formatDateDDMMYYYY(departureDate);
@@ -91,16 +92,16 @@ export function buildExpediaFlightUrl(
   const stopOption = directOnly ? ',nstop:1' : '';
   const expediaCabin = cabinClass === 'premium_economy' ? 'premium' : cabinClass;
 
-  return `https://www.expedia.co.uk/Flights-Search?flight-type=on&mode=search&trip=roundtrip&leg1=from:${origin},to:${destination},departure:${depFormatted}TANYT&leg2=from:${destination},to:${origin},departure:${retFormatted}TANYT&passengers=adults:${passengers},children:0,seniors:0,infantinlap:Y&options=cabinclass:${expediaCabin}${stopOption}`;
+  return `https://www.expedia.com/Flights-Search?flight-type=on&mode=search&trip=roundtrip&leg1=from:${origin},to:${destination},departure:${depFormatted}TANYT&leg2=from:${destination},to:${origin},departure:${retFormatted}TANYT&passengers=adults:${passengers},children:0,seniors:0,infantinlap:Y&options=cabinclass:${expediaCabin}${stopOption}`;
 }
 
 export function buildBookingComHotelUrl(
   destination: string,
   checkinDate: string,
   checkoutDate: string,
-  adults: number = 2,
+  adults: number = 1,
   rooms: number = 1,
-  currency: string = 'GBP'
+  currency: string = 'USD'
 ): string {
   return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(destination)}&checkin=${checkinDate}&checkout=${checkoutDate}&group_adults=${adults}&no_rooms=${rooms}&selected_currency=${currency}`;
 }
@@ -109,38 +110,39 @@ export function buildHotelsComUrl(
   destination: string,
   checkinDate: string,
   checkoutDate: string,
-  adults: number = 2
+  adults: number = 1
 ): string {
-  return `https://uk.hotels.com/Hotel-Search?destination=${encodeURIComponent(destination)}&startDate=${checkinDate}&endDate=${checkoutDate}&adults=${adults}`;
+  return `https://www.hotels.com/Hotel-Search?destination=${encodeURIComponent(destination)}&startDate=${checkinDate}&endDate=${checkoutDate}&adults=${adults}`;
 }
 
 export function buildExpediaHotelUrl(
   destination: string,
   checkinDate: string,
   checkoutDate: string,
-  adults: number = 2
+  adults: number = 1
 ): string {
-  return `https://www.expedia.co.uk/Hotel-Search?destination=${encodeURIComponent(destination)}&startDate=${checkinDate}&endDate=${checkoutDate}&adults=${adults}`;
+  return `https://www.expedia.com/Hotel-Search?destination=${encodeURIComponent(destination)}&startDate=${checkinDate}&endDate=${checkoutDate}&adults=${adults}`;
 }
 
 export function buildGoogleHotelsUrl(
   destination: string,
   checkinDate: string,
   checkoutDate: string,
-  adults: number = 2,
-  currency: string = 'GBP'
+  adults: number = 1,
+  currency: string = 'USD'
 ): string {
   const q = `Hotels in ${destination} from ${checkinDate} to ${checkoutDate} ${adults} adults`;
-  return `https://www.google.com/travel/hotels?q=${encodeURIComponent(q)}&curr=${currency}&hl=en-GB`;
+  return `https://www.google.com/travel/hotels?q=${encodeURIComponent(q)}&curr=${currency}&hl=en`;
 }
 
 export function buildAllBookingLinks(
   destination: string,
   departureDate: string,
   returnDate: string,
-  origin: string = 'LON',
-  passengers: number = 2,
-  currency: string = 'GBP'
+  origin: string,
+  passengers: number = 1,
+  currency: string = 'USD',
+  directOnly: boolean = false
 ): MultiPlatformBookingLinks {
   return {
     destination,
@@ -149,9 +151,9 @@ export function buildAllBookingLinks(
     passengers,
     currency,
     flights: {
-      skyscanner: buildSkyscannerFlightUrl(origin, destination, departureDate, returnDate, passengers, true, currency),
-      expedia: buildExpediaFlightUrl(origin, destination, departureDate, returnDate, passengers, true),
-      googleFlightsIta: buildGoogleFlightsUrl(origin === 'LON' ? 'London' : origin, destination, departureDate, returnDate, passengers, true, currency),
+      skyscanner: buildSkyscannerFlightUrl(origin, destination, departureDate, returnDate, passengers, directOnly, currency),
+      expedia: buildExpediaFlightUrl(origin, destination, departureDate, returnDate, passengers, directOnly),
+      googleFlightsIta: buildGoogleFlightsUrl(originForQuery(origin), destination, departureDate, returnDate, passengers, directOnly, currency),
       itaMatrix: 'https://matrix.itasoftware.com/',
       bookWithMatrix: 'https://bookwithmatrix.com/'
     },

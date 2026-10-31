@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { EdgeTTS } from 'node-edge-tts';
 import { GoogleGenAI } from '@google/genai';
+import { DEFAULTS } from '../config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,8 +41,8 @@ export async function generateVerbalSummary(ai: GoogleGenAI, fullMarkdown: strin
           role: 'user',
           parts: [
             {
-              text: `You are a friendly British AI travel agent speaking out loud to the user over terminal audio.
-Summarize the key flight, hotel, and total package cost for 2 people in GBP in 2 to 3 natural, enthusiastic spoken sentences.
+              text: `You are a friendly AI travel agent speaking out loud to the user over terminal audio.
+Summarize the key flight, hotel, and total package cost in 2 to 3 natural, enthusiastic spoken sentences, using the currency in the details.
 Do not use markdown, emojis, bullet points, or URLs.
 Keep it punchy, clear, and easy to understand when spoken aloud.
 
@@ -63,14 +64,14 @@ ${fullMarkdown}`
 /**
  * Speaks text out loud through macOS speakers using Neural EdgeTTS or macOS say.
  */
-export async function speak(text: string, voice: string = 'en-GB-RyanNeural'): Promise<void> {
+export async function speak(text: string, voice: string = DEFAULTS.voice): Promise<void> {
   const cleaned = cleanTextForSpeech(text);
   if (!cleaned) return;
 
   try {
     const tts = new EdgeTTS({
       voice,
-      lang: 'en-GB',
+      lang: voice.split('-').slice(0, 2).join('-'),
       rate: '+5%'
     });
 

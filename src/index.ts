@@ -11,6 +11,7 @@ import { searchHotels } from './services/hotelSearch.js';
 import { compareTripDeal, findCheapestDestinations } from './services/dealFinder.js';
 import { buildAllBookingLinks } from './services/urlBuilder.js';
 import { generateITAMatrixCommand } from './services/itaMatrix.js';
+import { DEFAULTS, formatMoney, resolveOrigin } from './config.js';
 
 const server = new Server(
   {
@@ -24,6 +25,74 @@ const server = new Server(
   }
 );
 
+const originDescription = DEFAULTS.origin
+  ? `Departure city or airport code, e.g. "LHR", "NYC", "Lisbon" (Default: "${DEFAULTS.origin}")`
+  : 'Departure city or airport code, e.g. "LHR", "NYC", "Lisbon" (required)';
+
+// Schema fragments shared by several tools
+const schema = {
+  destination: {
+    type: 'string',
+    description: 'Destination city or airport code (e.g., "Barcelona", "Tokyo", "BCN", "JFK")'
+  },
+  departureDate: { type: 'string', description: 'Departure / check-in date in YYYY-MM-DD format' },
+  returnDate: { type: 'string', description: 'Return / check-out date in YYYY-MM-DD format' },
+  origin: { type: 'string', description: originDescription },
+  passengers: {
+    type: 'number',
+    description: `Number of adult travellers (Default: ${DEFAULTS.adults})`,
+    default: DEFAULTS.adults
+  },
+  directOnly: {
+    type: 'boolean',
+    description: `Non-stop flights only (Default: ${DEFAULTS.directOnly})`,
+    default: DEFAULTS.directOnly
+  },
+  checkedBags: {
+    type: 'boolean',
+    description: `Add an estimated cost for 1 checked bag per passenger, both ways, to flight prices (Default: ${DEFAULTS.checkedBags})`,
+    default: DEFAULTS.checkedBags
+  },
+  currency: {
+    type: 'string',
+    description: `ISO currency code for prices, e.g. "USD", "EUR", "GBP" (Default: "${DEFAULTS.currency}")`,
+    default: DEFAULTS.currency
+  },
+  cabinClass: {
+    type: 'string',
+    enum: ['economy', 'premium_economy', 'business', 'first'],
+    description: 'Cabin class (Default: "economy")',
+    default: 'economy'
+  },
+  aircraftFilter: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Filter for specific aircraft models, e.g. ["A350", "A380", "777", "787"]'
+  },
+  minStarRating: {
+    type: 'number',
+    description: `Minimum hotel star rating${DEFAULTS.minStars !== undefined ? ` (Default: ${DEFAULTS.minStars})` : ' (Default: no limit)'}`
+  },
+  maxStarRating: {
+    type: 'number',
+    description: `Maximum hotel star rating${DEFAULTS.maxStars !== undefined ? ` (Default: ${DEFAULTS.maxStars})` : ' (Default: no limit)'}`
+  },
+  requireKitchenOrBreakfast: {
+    type: 'boolean',
+    description: `Only hotels with a kitchen/kitchenette or breakfast included (Default: ${DEFAULTS.requireKitchenOrBreakfast})`,
+    default: DEFAULTS.requireKitchenOrBreakfast
+  },
+  preferredLocations: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Neighbourhoods or areas to search instead of the whole destination, e.g. ["Shoreditch", "Soho"]'
+  }
+};
+
+const str = (v: unknown) => (v === undefined || v === null || v === '' ? undefined : String(v));
+const num = (v: unknown) => (v === undefined || v === null || v === '' ? undefined : Number(v));
+const bool = (v: unknown) => (v === undefined || v === null ? undefined : Boolean(v));
+
 // Register tools list
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
@@ -31,58 +100,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'search_flights',
         description:
-          'Search real-time low-price return flights from London for 2 people with direct non-stop routing in GBP (£). DEFAULT: prices INCLUDE 1 checked bag per person (return) – totalPriceGbp = base fare + estimated checked-bag cost, ranked by that total. Only set checkedBags=false if the user explicitly says to ignore checked luggage this time. Returns airline options, schedule, duration, base fare, bag cost, fare family to book, total and per-person price, and booking links (Skyscanner, Google Flights, Expedia, ITA Matrix, Kayak with bag fees).',
+          'Search real-time low-price return flights. Returns airline options, schedule, duration, base fare, optional checked-bag estimate and fare family to book, total and per-person price, and booking links (Skyscanner, Google Flights, Expedia, ITA Matrix, Kayak with bag fees).',
         inputSchema: {
           type: 'object',
           properties: {
-            destination: {
-              type: 'string',
-              description: 'Destination city or airport code (e.g., "Barcelona", "Rome", "Paris", "BCN", "FCO")'
-            },
-            departureDate: {
-              type: 'string',
-              description: 'Departure date in YYYY-MM-DD format'
-            },
-            returnDate: {
-              type: 'string',
-              description: 'Return date in YYYY-MM-DD format'
-            },
-            origin: {
-              type: 'string',
-              description: 'Departure city or airport code (Default: "LON" for all London airports: LHR, LGW, STN, LTN, LCY)',
-              default: 'LON'
-            },
-            passengers: {
-              type: 'number',
-              description: 'Number of adult passengers (Default: 2)',
-              default: 2
-            },
-            directOnly: {
-              type: 'boolean',
-              description: 'Filter for direct non-stop flights only (Default: true)',
-              default: true
-            },
-            checkedBags: {
-              type: 'boolean',
-              description: 'Include 1 checked bag per passenger, both ways, in the price (Default: true). Set false ONLY when the user says to ignore checked luggage.',
-              default: true
-            },
-            currency: {
-              type: 'string',
-              description: 'Currency code (Default: "GBP")',
-              default: 'GBP'
-            },
-            cabinClass: {
-              type: 'string',
-              enum: ['economy', 'premium_economy', 'business', 'first'],
-              description: 'Cabin class (Default: "economy")',
-              default: 'economy'
-            },
-            aircraftFilter: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Filter for specific aircraft models, e.g. ["A350", "A380", "777", "787"]'
-            },
+            destination: schema.destination,
+            departureDate: schema.departureDate,
+            returnDate: schema.returnDate,
+            origin: schema.origin,
+            passengers: schema.passengers,
+            directOnly: schema.directOnly,
+            checkedBags: schema.checkedBags,
+            currency: schema.currency,
+            cabinClass: schema.cabinClass,
+            aircraftFilter: schema.aircraftFilter,
             minDurationHours: {
               type: 'number',
               description: 'Minimum flight duration in hours (e.g. 8 for flights 8h or longer)'
@@ -94,65 +125,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'search_hotels',
         description:
-          'Search real-time hotel options, ratings, and prices in GBP (£) for 2 adults (1 room). Enforces user preferences: 3 or 4 stars only, either kitchen/kitchenette or breakfast included, and location filters (Jersey City, Journal Square, Long Island City, or Manhattan for NYC area). Returns property names, location/neighborhood, star ratings, amenities, review scores, nightly prices, total stay prices, and pre-populated 1-click booking links for Booking.com, Hotels.com, Expedia, and Google Hotels.',
+          'Search real-time hotel options, ratings, and prices. Optional filters for star rating, kitchen or breakfast, review score, price and neighbourhood. Returns property names, location, star ratings, amenities, review scores, nightly and total prices, and booking links for Booking.com, Hotels.com, Expedia, and Google Hotels.',
         inputSchema: {
           type: 'object',
           properties: {
-            destination: {
-              type: 'string',
-              description: 'Destination city or location (e.g., "New York", "Rome", "Barcelona")'
-            },
-            checkinDate: {
-              type: 'string',
-              description: 'Check-in date in YYYY-MM-DD format'
-            },
-            checkoutDate: {
-              type: 'string',
-              description: 'Check-out date in YYYY-MM-DD format'
-            },
-            adults: {
-              type: 'number',
-              description: 'Number of adult guests (Default: 2)',
-              default: 2
-            },
-            rooms: {
-              type: 'number',
-              description: 'Number of rooms (Default: 1)',
-              default: 1
-            },
-            minStarRating: {
-              type: 'number',
-              description: 'Minimum star rating (Default: 3 for 3-4 star preference)',
-              default: 3
-            },
-            maxStarRating: {
-              type: 'number',
-              description: 'Maximum star rating (Default: 4 for 3-4 star preference)',
-              default: 4
-            },
-            requireKitchenOrBreakfast: {
-              type: 'boolean',
-              description: 'Require either kitchen/kitchenette or breakfast included (Default: true)',
-              default: true
-            },
-            preferredLocations: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'List of allowed neighborhoods/cities (Default for NYC: ["Jersey City", "Journal Square", "Long Island City", "Manhattan"])'
-            },
-            minRating: {
-              type: 'number',
-              description: 'Minimum review score / rating out of 5 (e.g., 4.0)'
-            },
-            maxPricePerNight: {
-              type: 'number',
-              description: 'Maximum price per night in GBP (£)'
-            },
-            currency: {
-              type: 'string',
-              description: 'Currency code (Default: "GBP")',
-              default: 'GBP'
-            }
+            destination: schema.destination,
+            checkinDate: { type: 'string', description: 'Check-in date in YYYY-MM-DD format' },
+            checkoutDate: { type: 'string', description: 'Check-out date in YYYY-MM-DD format' },
+            adults: { ...schema.passengers, description: `Number of adult guests (Default: ${DEFAULTS.adults})` },
+            rooms: { type: 'number', description: 'Number of rooms (Default: 1)', default: 1 },
+            minStarRating: schema.minStarRating,
+            maxStarRating: schema.maxStarRating,
+            requireKitchenOrBreakfast: schema.requireKitchenOrBreakfast,
+            preferredLocations: schema.preferredLocations,
+            minRating: { type: 'number', description: 'Minimum review score out of 5 (e.g., 4.0)' },
+            maxPricePerNight: { type: 'number', description: 'Maximum price per night, in the search currency' },
+            currency: schema.currency
           },
           required: ['destination', 'checkinDate', 'checkoutDate']
         }
@@ -160,62 +148,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'compare_trip_deal',
         description:
-          'Complete trip package aggregator for 2 adults from London. Combines the cheapest direct return flight with top-rated hotels matching preferences (3-4 stars, kitchen or breakfast, and preferred areas like Jersey City, Journal Square, Long Island City, or Manhattan), calculates total stay cost and per-person cost in GBP (£) – flight price INCLUDES 1 checked bag per person by default, and provides comprehensive 1-click booking links across Skyscanner, Booking.com, Hotels.com, and Expedia.',
+          'Trip package aggregator: combines the cheapest matching return flight with the best-priced hotels for the same dates into a total package estimate with a per-person breakdown and booking links.',
         inputSchema: {
           type: 'object',
           properties: {
-            destination: {
-              type: 'string',
-              description: 'Destination city or airport (e.g., "New York", "Rome", "Barcelona")'
-            },
-            departureDate: {
-              type: 'string',
-              description: 'Departure date in YYYY-MM-DD format'
-            },
-            returnDate: {
-              type: 'string',
-              description: 'Return date in YYYY-MM-DD format'
-            },
-            origin: {
-              type: 'string',
-              description: 'Departure city (Default: "LON")',
-              default: 'LON'
-            },
-            passengers: {
-              type: 'number',
-              description: 'Number of adult passengers (Default: 2)',
-              default: 2
-            },
-            minStarRating: {
-              type: 'number',
-              description: 'Minimum star rating (Default: 3)',
-              default: 3
-            },
-            maxStarRating: {
-              type: 'number',
-              description: 'Maximum star rating (Default: 4)',
-              default: 4
-            },
-            requireKitchenOrBreakfast: {
-              type: 'boolean',
-              description: 'Require either kitchen or breakfast included (Default: true)',
-              default: true
-            },
-            preferredLocations: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'List of allowed neighborhoods/cities (Default for NYC: ["Jersey City", "Journal Square", "Long Island City", "Manhattan"])'
-            },
-            checkedBags: {
-              type: 'boolean',
-              description: 'Include 1 checked bag per passenger, both ways, in flight prices (Default: true). Set false ONLY when the user says to ignore checked luggage.',
-              default: true
-            },
-            currency: {
-              type: 'string',
-              description: 'Currency code (Default: "GBP")',
-              default: 'GBP'
-            }
+            destination: schema.destination,
+            departureDate: schema.departureDate,
+            returnDate: schema.returnDate,
+            origin: schema.origin,
+            passengers: schema.passengers,
+            directOnly: schema.directOnly,
+            minStarRating: schema.minStarRating,
+            maxStarRating: schema.maxStarRating,
+            requireKitchenOrBreakfast: schema.requireKitchenOrBreakfast,
+            preferredLocations: schema.preferredLocations,
+            checkedBags: schema.checkedBags,
+            currency: schema.currency
           },
           required: ['destination', 'departureDate', 'returnDate']
         }
@@ -223,37 +171,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: 'generate_booking_links',
         description:
-          'Generate pre-populated, verified 1-click booking and checkout links across all 5 platforms (Skyscanner, Booking.com, Hotels.com, Expedia, and ITA Matrix / BookWithMatrix) with 2 adults, London return, direct-only flights, and GBP currency locked in.',
+          'Generate pre-populated booking and checkout links across Skyscanner, Booking.com, Hotels.com, Expedia, Google, and ITA Matrix / BookWithMatrix for the given trip.',
         inputSchema: {
           type: 'object',
           properties: {
-            destination: {
-              type: 'string',
-              description: 'Destination city or airport code (e.g., "Barcelona", "Rome")'
-            },
-            departureDate: {
-              type: 'string',
-              description: 'Departure / Check-in date in YYYY-MM-DD format'
-            },
-            returnDate: {
-              type: 'string',
-              description: 'Return / Check-out date in YYYY-MM-DD format'
-            },
-            origin: {
-              type: 'string',
-              description: 'Departure city or airport code (Default: "LON")',
-              default: 'LON'
-            },
-            passengers: {
-              type: 'number',
-              description: 'Number of passengers / guests (Default: 2)',
-              default: 2
-            },
-            currency: {
-              type: 'string',
-              description: 'Currency code (Default: "GBP")',
-              default: 'GBP'
-            }
+            destination: schema.destination,
+            departureDate: schema.departureDate,
+            returnDate: schema.returnDate,
+            origin: schema.origin,
+            passengers: schema.passengers,
+            directOnly: schema.directOnly,
+            currency: schema.currency
           },
           required: ['destination', 'departureDate', 'returnDate']
         }
@@ -265,93 +193,42 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: 'object',
           properties: {
-            destination: {
-              type: 'string',
-              description: 'Destination airport code or city (e.g., "Rome", "BCN")'
-            },
-            departureDate: {
-              type: 'string',
-              description: 'Outbound date in YYYY-MM-DD format'
-            },
-            returnDate: {
-              type: 'string',
-              description: 'Inbound date in YYYY-MM-DD format'
-            },
-            origin: {
-              type: 'string',
-              description: 'Origin airport code (Default: "LON")',
-              default: 'LON'
-            },
-            passengers: {
-              type: 'number',
-              description: 'Number of adult passengers (Default: 2)',
-              default: 2
-            },
-            currency: {
-              type: 'string',
-              description: 'Currency code (Default: "GBP")',
-              default: 'GBP'
-            },
+            destination: schema.destination,
+            departureDate: { type: 'string', description: 'Outbound date in YYYY-MM-DD format' },
+            returnDate: { type: 'string', description: 'Inbound date in YYYY-MM-DD format' },
+            origin: schema.origin,
+            passengers: schema.passengers,
+            directOnly: schema.directOnly,
+            currency: schema.currency,
             alliance: {
               type: 'string',
               enum: ['star-alliance', 'oneworld', 'skyteam'],
               description: 'Optional airline alliance filter'
             },
-            cabinClass: {
-              type: 'string',
-              enum: ['economy', 'premium_economy', 'business', 'first'],
-              description: 'Cabin class (Default: "economy")',
-              default: 'economy'
-            },
-            aircraftFilter: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Filter for specific aircraft models, e.g. ["A350", "A380", "777", "787"]'
-            }
+            cabinClass: schema.cabinClass,
+            aircraftFilter: schema.aircraftFilter
           },
           required: ['destination', 'departureDate', 'returnDate']
         }
       },
       {
         name: 'find_cheapest_destinations',
-        description:
-          'Scan top European holiday and weekend destinations from London for direct return flights for 2 people on given dates. Ranks destinations by lowest total price in GBP (£), including 1 checked bag per person by default.',
+        description: `Scan a list of destinations for return flights on given dates and rank them by lowest total price. Without a list, scans: ${DEFAULTS.dealDestinations.join(', ')}.`,
         inputSchema: {
           type: 'object',
           properties: {
-            departureDate: {
-              type: 'string',
-              description: 'Departure date in YYYY-MM-DD format'
-            },
-            returnDate: {
-              type: 'string',
-              description: 'Return date in YYYY-MM-DD format'
-            },
+            departureDate: schema.departureDate,
+            returnDate: schema.returnDate,
             destinations: {
               type: 'array',
               items: { type: 'string' },
-              description: 'Optional custom list of destination cities to scan'
+              description: 'Destination cities to scan'
             },
-            origin: {
-              type: 'string',
-              description: 'Origin city or code (Default: "LON")',
-              default: 'LON'
-            },
-            passengers: {
-              type: 'number',
-              description: 'Number of adult passengers (Default: 2)',
-              default: 2
-            },
-            checkedBags: {
-              type: 'boolean',
-              description: 'Include 1 checked bag per passenger, both ways, in flight prices (Default: true). Set false ONLY when the user says to ignore checked luggage.',
-              default: true
-            },
-            currency: {
-              type: 'string',
-              description: 'Currency code (Default: "GBP")',
-              default: 'GBP'
-            }
+            origin: schema.origin,
+            passengers: schema.passengers,
+            directOnly: schema.directOnly,
+            checkedBags: schema.checkedBags,
+            currency: schema.currency
           },
           required: ['departureDate', 'returnDate']
         }
@@ -363,6 +240,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // Handle tool executions
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args = {} } = request.params;
+  const json = (value: unknown) => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] });
 
   try {
     switch (name) {
@@ -370,17 +248,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const destination = String(args.destination);
         const departureDate = String(args.departureDate);
         const returnDate = String(args.returnDate);
-        const origin = args.origin ? String(args.origin) : 'LON';
-        const passengers = args.passengers ? Number(args.passengers) : 2;
-        const directOnly = args.directOnly !== undefined ? Boolean(args.directOnly) : true;
-        const currency = args.currency ? String(args.currency) : 'GBP';
-        const checkedBags = args.checkedBags !== undefined ? Boolean(args.checkedBags) : true;
-        const cabinClass = (args.cabinClass ? String(args.cabinClass) : 'economy') as any;
+        const origin = resolveOrigin(str(args.origin));
+        const passengers = num(args.passengers) ?? DEFAULTS.adults;
+        const directOnly = bool(args.directOnly) ?? DEFAULTS.directOnly;
+        const currency = (str(args.currency) ?? DEFAULTS.currency).toUpperCase();
+        const checkedBags = bool(args.checkedBags) ?? DEFAULTS.checkedBags;
+        const cabinClass = (str(args.cabinClass) ?? 'economy') as any;
         const aircraftFilter = Array.isArray(args.aircraftFilter)
           ? (args.aircraftFilter as string[])
           : undefined;
-        const minDurationHours =
-          args.minDurationHours !== undefined ? Number(args.minDurationHours) : undefined;
+        const minDurationHours = num(args.minDurationHours);
 
         const flights = await searchFlights({
           destination,
@@ -396,57 +273,40 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           minDurationHours
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  searchCriteria: {
-                    origin,
-                    destination,
-                    dates: `${departureDate} to ${returnDate}`,
-                    passengers: `${passengers} Adults`,
-                    cabinClass,
-                    aircraftFilter: aircraftFilter || 'All',
-                    minDurationHours: minDurationHours ? `${minDurationHours}h+` : 'None',
-                    routing: directOnly ? 'Direct Non-Stop Only' : 'All',
-                    luggage:
-                      cabinClass === 'business' || cabinClass === 'first'
-                        ? 'Business/First class allowance (2 x 32kg included in fare)'
-                        : checkedBags
-                        ? `${passengers} x checked bag (1 per person) INCLUDED in prices (estimated bag cost added to base fare)`
-                        : 'Checked luggage IGNORED (base fares, likely hand luggage only)',
-                    currency
-                  },
-                  totalFound: flights.length,
-                  bestPriceGbp:
-                    flights.length > 0
-                      ? `£${flights[0].totalPriceGbp} total (£${flights[0].pricePerPersonGbp}/person)`
-                      : 'None found',
-                  flights
-                },
-                null,
-                2
-              )
-            }
-          ]
-        };
+        return json({
+          searchCriteria: {
+            origin,
+            destination,
+            dates: `${departureDate} to ${returnDate}`,
+            passengers: `${passengers} Adult${passengers === 1 ? '' : 's'}`,
+            cabinClass,
+            aircraftFilter: aircraftFilter || 'All',
+            minDurationHours: minDurationHours ? `${minDurationHours}h+` : 'None',
+            routing: directOnly ? 'Direct Non-Stop Only' : 'All',
+            luggage:
+              cabinClass === 'business' || cabinClass === 'first'
+                ? 'Business/First class allowance (2 x 32kg included in fare)'
+                : checkedBags
+                ? `${passengers} x checked bag (1 per person) INCLUDED in prices (estimated bag cost added to base fare)`
+                : 'Checked luggage not included (base fares, likely hand luggage only)',
+            currency
+          },
+          totalFound: flights.length,
+          bestPrice:
+            flights.length > 0
+              ? `${formatMoney(flights[0].totalPrice, currency)} total (${formatMoney(flights[0].pricePerPerson, currency)}/person)`
+              : 'None found',
+          flights
+        });
       }
 
       case 'search_hotels': {
         const destination = String(args.destination);
         const checkinDate = String(args.checkinDate);
         const checkoutDate = String(args.checkoutDate);
-        const adults = args.adults ? Number(args.adults) : 2;
-        const rooms = args.rooms ? Number(args.rooms) : 1;
-        const minStarRating = args.minStarRating !== undefined ? Number(args.minStarRating) : 3;
-        const maxStarRating = args.maxStarRating !== undefined ? Number(args.maxStarRating) : 4;
-        const requireKitchenOrBreakfast = args.requireKitchenOrBreakfast !== undefined ? Boolean(args.requireKitchenOrBreakfast) : true;
-        const preferredLocations = Array.isArray(args.preferredLocations) ? (args.preferredLocations as string[]) : undefined;
-        const minRating = args.minRating ? Number(args.minRating) : undefined;
-        const maxPricePerNight = args.maxPricePerNight ? Number(args.maxPricePerNight) : undefined;
-        const currency = args.currency ? String(args.currency) : 'GBP';
+        const adults = num(args.adults) ?? DEFAULTS.adults;
+        const rooms = num(args.rooms) ?? 1;
+        const currency = (str(args.currency) ?? DEFAULTS.currency).toUpperCase();
 
         const hotels = await searchHotels({
           destination,
@@ -454,193 +314,122 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           checkoutDate,
           adults,
           rooms,
-          minStarRating,
-          maxStarRating,
-          requireKitchenOrBreakfast,
-          preferredLocations,
-          minRating,
-          maxPricePerNight,
+          minStarRating: num(args.minStarRating),
+          maxStarRating: num(args.maxStarRating),
+          requireKitchenOrBreakfast: bool(args.requireKitchenOrBreakfast),
+          preferredLocations: Array.isArray(args.preferredLocations) ? (args.preferredLocations as string[]) : undefined,
+          minRating: num(args.minRating),
+          maxPricePerNight: num(args.maxPricePerNight),
           currency
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  searchCriteria: {
-                    destination,
-                    checkinDate,
-                    checkoutDate,
-                    guests: `${adults} Adults, ${rooms} Room`,
-                    currency
-                  },
-                  totalFound: hotels.length,
-                  cheapestHotelGbp: hotels.length > 0 ? `£${hotels[0].pricePerNightGbp}/night (£${hotels[0].totalPriceGbp} total stay)` : 'None found',
-                  hotels
-                },
-                null,
-                2
-              )
-            }
-          ]
-        };
+        return json({
+          searchCriteria: {
+            destination,
+            checkinDate,
+            checkoutDate,
+            guests: `${adults} Adult${adults === 1 ? '' : 's'}, ${rooms} Room${rooms === 1 ? '' : 's'}`,
+            currency
+          },
+          totalFound: hotels.length,
+          cheapestHotel:
+            hotels.length > 0
+              ? `${formatMoney(hotels[0].pricePerNight, currency)}/night (${formatMoney(hotels[0].totalPrice, currency)} total stay)`
+              : 'None found',
+          hotels
+        });
       }
 
       case 'compare_trip_deal': {
         const destination = String(args.destination);
         const departureDate = String(args.departureDate);
         const returnDate = String(args.returnDate);
-        const origin = args.origin ? String(args.origin) : 'LON';
-        const passengers = args.passengers ? Number(args.passengers) : 2;
-        const currency = args.currency ? String(args.currency) : 'GBP';
-        const minStarRating = args.minStarRating !== undefined ? Number(args.minStarRating) : 3;
-        const maxStarRating = args.maxStarRating !== undefined ? Number(args.maxStarRating) : 4;
-        const requireKitchenOrBreakfast = args.requireKitchenOrBreakfast !== undefined ? Boolean(args.requireKitchenOrBreakfast) : true;
-        const preferredLocations = Array.isArray(args.preferredLocations) ? (args.preferredLocations as string[]) : undefined;
-        const checkedBags = args.checkedBags !== undefined ? Boolean(args.checkedBags) : true;
 
         const deal = await compareTripDeal(
           destination,
           departureDate,
           returnDate,
-          origin,
-          passengers,
-          currency,
-          preferredLocations,
-          minStarRating,
-          maxStarRating,
-          requireKitchenOrBreakfast,
-          checkedBags
+          str(args.origin),
+          num(args.passengers) ?? DEFAULTS.adults,
+          (str(args.currency) ?? DEFAULTS.currency).toUpperCase(),
+          Array.isArray(args.preferredLocations) ? (args.preferredLocations as string[]) : undefined,
+          num(args.minStarRating) ?? DEFAULTS.minStars,
+          num(args.maxStarRating) ?? DEFAULTS.maxStars,
+          bool(args.requireKitchenOrBreakfast) ?? DEFAULTS.requireKitchenOrBreakfast,
+          bool(args.checkedBags) ?? DEFAULTS.checkedBags,
+          bool(args.directOnly) ?? DEFAULTS.directOnly
         );
 
         if (!deal) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({ error: `No direct flight and hotel deals found for ${destination} on ${departureDate} to ${returnDate}` })
-              }
-            ]
-          };
+          return json({ error: `No flight and hotel deals found for ${destination} on ${departureDate} to ${returnDate}` });
         }
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(deal, null, 2)
-            }
-          ]
-        };
+        return json(deal);
       }
 
       case 'generate_booking_links': {
-        const destination = String(args.destination);
-        const departureDate = String(args.departureDate);
-        const returnDate = String(args.returnDate);
-        const origin = args.origin ? String(args.origin) : 'LON';
-        const passengers = args.passengers ? Number(args.passengers) : 2;
-        const currency = args.currency ? String(args.currency) : 'GBP';
-
         const links = buildAllBookingLinks(
-          destination,
-          departureDate,
-          returnDate,
-          origin,
-          passengers,
-          currency
+          String(args.destination),
+          String(args.departureDate),
+          String(args.returnDate),
+          resolveOrigin(str(args.origin)),
+          num(args.passengers) ?? DEFAULTS.adults,
+          (str(args.currency) ?? DEFAULTS.currency).toUpperCase(),
+          bool(args.directOnly) ?? DEFAULTS.directOnly
         );
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(links, null, 2)
-            }
-          ]
-        };
+        return json(links);
       }
 
       case 'ita_matrix_power_search': {
-        const destination = String(args.destination);
-        const departureDate = String(args.departureDate);
-        const returnDate = String(args.returnDate);
-        const origin = args.origin ? String(args.origin) : 'LON';
-        const passengers = args.passengers ? Number(args.passengers) : 2;
-        const currency = args.currency ? String(args.currency) : 'GBP';
-        const alliance = args.alliance ? String(args.alliance) : undefined;
-        const cabinClass = (args.cabinClass ? String(args.cabinClass) : 'economy') as any;
         const aircraftFilter = Array.isArray(args.aircraftFilter)
           ? (args.aircraftFilter as string[])
           : undefined;
 
         const cmd = generateITAMatrixCommand(
-          destination,
-          departureDate,
-          returnDate,
-          origin,
-          passengers,
-          currency,
-          alliance,
-          cabinClass,
-          aircraftFilter
+          String(args.destination),
+          String(args.departureDate),
+          String(args.returnDate),
+          resolveOrigin(str(args.origin)),
+          num(args.passengers) ?? DEFAULTS.adults,
+          (str(args.currency) ?? DEFAULTS.currency).toUpperCase(),
+          str(args.alliance),
+          (str(args.cabinClass) ?? 'economy') as any,
+          aircraftFilter,
+          bool(args.directOnly) ?? DEFAULTS.directOnly
         );
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(cmd, null, 2)
-            }
-          ]
-        };
+        return json(cmd);
       }
 
       case 'find_cheapest_destinations': {
         const departureDate = String(args.departureDate);
         const returnDate = String(args.returnDate);
-        const destinations = Array.isArray(args.destinations)
-          ? (args.destinations as string[])
-          : undefined;
-        const origin = args.origin ? String(args.origin) : 'LON';
-        const passengers = args.passengers ? Number(args.passengers) : 2;
-        const currency = args.currency ? String(args.currency) : 'GBP';
-        const checkedBags = args.checkedBags !== undefined ? Boolean(args.checkedBags) : true;
+        const origin = resolveOrigin(str(args.origin));
+        const passengers = num(args.passengers) ?? DEFAULTS.adults;
+        const currency = (str(args.currency) ?? DEFAULTS.currency).toUpperCase();
+        const checkedBags = bool(args.checkedBags) ?? DEFAULTS.checkedBags;
+        const directOnly = bool(args.directOnly) ?? DEFAULTS.directOnly;
 
         const deals = await findCheapestDestinations(
           departureDate,
           returnDate,
-          destinations,
+          Array.isArray(args.destinations) ? (args.destinations as string[]) : undefined,
           origin,
           passengers,
           currency,
-          checkedBags
+          checkedBags,
+          directOnly
         );
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(
-                {
-                  searchCriteria: {
-                    origin,
-                    dates: `${departureDate} to ${returnDate}`,
-                    passengers: `${passengers} Adults`,
-                    routing: 'Direct Non-Stop Only',
-                    luggage: checkedBags ? '1 checked bag per person INCLUDED' : 'Checked luggage IGNORED',
-                    currency
-                  },
-                  destinationsRankedByPrice: deals
-                },
-                null,
-                2
-              )
-            }
-          ]
-        };
+        return json({
+          searchCriteria: {
+            origin,
+            dates: `${departureDate} to ${returnDate}`,
+            passengers: `${passengers} Adult${passengers === 1 ? '' : 's'}`,
+            routing: directOnly ? 'Direct Non-Stop Only' : 'All',
+            luggage: checkedBags ? '1 checked bag per person INCLUDED' : 'Checked luggage not included',
+            currency
+          },
+          destinationsRankedByPrice: deals
+        });
       }
 
       default:

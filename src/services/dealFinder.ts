@@ -9,20 +9,23 @@ import {
   buildHotelsComUrl,
   buildExpediaHotelUrl
 } from './urlBuilder.js';
+import { DEFAULTS, originForQuery, resolveOrigin } from '../config.js';
 
 export async function compareTripDeal(
   destination: string,
   departureDate: string,
   returnDate: string,
-  origin: string = 'LON',
-  passengers: number = 2,
-  currency: string = 'GBP',
+  originArg?: string,
+  passengers: number = DEFAULTS.adults,
+  currency: string = DEFAULTS.currency,
   preferredLocations?: string[],
-  minStarRating: number = 3,
-  maxStarRating: number = 4,
-  requireKitchenOrBreakfast: boolean = true,
-  checkedBags: boolean = true
+  minStarRating: number | undefined = DEFAULTS.minStars,
+  maxStarRating: number | undefined = DEFAULTS.maxStars,
+  requireKitchenOrBreakfast: boolean = DEFAULTS.requireKitchenOrBreakfast,
+  checkedBags: boolean = DEFAULTS.checkedBags,
+  directOnly: boolean = DEFAULTS.directOnly
 ): Promise<TripDeal | null> {
+  const origin = resolveOrigin(originArg);
   const nights = calculateNights(departureDate, returnDate);
 
   // Search flights and hotels in parallel
@@ -33,7 +36,7 @@ export async function compareTripDeal(
       returnDate,
       origin,
       passengers,
-      directOnly: true,
+      directOnly,
       currency,
       checkedBags
     }),
@@ -57,11 +60,11 @@ export async function compareTripDeal(
 
   const cheapestFlight = flights[0];
   const topHotels = hotels.slice(0, 5);
-  const baselineHotelPrice = topHotels.length > 0 ? topHotels[0].totalPriceGbp : 0;
-  const totalPackagePriceGbp = cheapestFlight.totalPriceGbp + baselineHotelPrice;
-  const packagePricePerPersonGbp = Math.round(totalPackagePriceGbp / passengers);
+  const baselineHotelPrice = topHotels.length > 0 ? topHotels[0].totalPrice : 0;
+  const totalPackagePrice = cheapestFlight.totalPrice + baselineHotelPrice;
+  const packagePricePerPerson = Math.round(totalPackagePrice / passengers);
 
-  const originQuery = origin === 'LON' ? 'London' : origin;
+  const originQuery = originForQuery(origin);
 
   return {
     destination,
@@ -73,12 +76,12 @@ export async function compareTripDeal(
     checkedBagsIncluded: checkedBags,
     cheapestFlight,
     recommendedHotels: topHotels,
-    totalPackagePriceGbp,
-    packagePricePerPersonGbp,
+    totalPackagePrice,
+    packagePricePerPerson,
     bookingLinks: {
-      skyscannerFlights: buildSkyscannerFlightUrl(origin, destination, departureDate, returnDate, passengers, true, currency),
-      expediaFlights: buildExpediaFlightUrl(origin, destination, departureDate, returnDate, passengers, true),
-      googleFlightsIta: buildGoogleFlightsUrl(originQuery, destination, departureDate, returnDate, passengers, true, currency),
+      skyscannerFlights: buildSkyscannerFlightUrl(origin, destination, departureDate, returnDate, passengers, directOnly, currency),
+      expediaFlights: buildExpediaFlightUrl(origin, destination, departureDate, returnDate, passengers, directOnly),
+      googleFlightsIta: buildGoogleFlightsUrl(originQuery, destination, departureDate, returnDate, passengers, directOnly, currency),
       bookingHotels: buildBookingComHotelUrl(destination, departureDate, returnDate, passengers, 1, currency),
       hotelsCom: buildHotelsComUrl(destination, departureDate, returnDate, passengers),
       expediaHotels: buildExpediaHotelUrl(destination, departureDate, returnDate, passengers),
@@ -87,37 +90,24 @@ export async function compareTripDeal(
   };
 }
 
-const DEFAULT_POPULAR_DESTINATIONS = [
-  'Barcelona',
-  'Rome',
-  'Amsterdam',
-  'Dublin',
-  'Madrid',
-  'Paris',
-  'Lisbon',
-  'Milan',
-  'Prague',
-  'Berlin',
-  'Venice',
-  'Faro'
-];
-
 export interface DestinationDeal {
   destination: string;
   cheapestFlight: FlightOption;
-  totalFlightPriceGbp: number;
-  flightPricePerPersonGbp: number;
+  totalFlightPrice: number;
+  flightPricePerPerson: number;
 }
 
 export async function findCheapestDestinations(
   departureDate: string,
   returnDate: string,
-  destinations: string[] = DEFAULT_POPULAR_DESTINATIONS,
-  origin: string = 'LON',
-  passengers: number = 2,
-  currency: string = 'GBP',
-  checkedBags: boolean = true
+  destinations: string[] = DEFAULTS.dealDestinations,
+  originArg?: string,
+  passengers: number = DEFAULTS.adults,
+  currency: string = DEFAULTS.currency,
+  checkedBags: boolean = DEFAULTS.checkedBags,
+  directOnly: boolean = DEFAULTS.directOnly
 ): Promise<DestinationDeal[]> {
+  const origin = resolveOrigin(originArg);
   const tasks = destinations.map(async (dest) => {
     try {
       const flights = await searchFlights({
@@ -126,7 +116,7 @@ export async function findCheapestDestinations(
         returnDate,
         origin,
         passengers,
-        directOnly: true,
+        directOnly,
         currency,
         checkedBags
       });
@@ -136,8 +126,8 @@ export async function findCheapestDestinations(
         return {
           destination: dest,
           cheapestFlight: cheapest,
-          totalFlightPriceGbp: cheapest.totalPriceGbp,
-          flightPricePerPersonGbp: cheapest.pricePerPersonGbp
+          totalFlightPrice: cheapest.totalPrice,
+          flightPricePerPerson: cheapest.pricePerPerson
         };
       }
     } catch {
@@ -148,6 +138,6 @@ export async function findCheapestDestinations(
 
   const results = await Promise.all(tasks);
   const valid = results.filter((r): r is DestinationDeal => r !== null);
-  valid.sort((a, b) => a.totalFlightPriceGbp - b.totalFlightPriceGbp);
+  valid.sort((a, b) => a.totalFlightPrice - b.totalFlightPrice);
   return valid;
 }

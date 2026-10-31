@@ -2,14 +2,15 @@
 import readline from 'readline';
 import { TravelAgent } from './travelAgent.js';
 import { speak, generateVerbalSummary, startVoiceRecording } from './voice.js';
+import { DEFAULTS, formatMoney } from '../config.js';
 
 const BANNER = `
 ========================================================================
 ✈️   TRAVEL AI AGENT — Real-Time Voice & Terminal Assistant
 ========================================================================
-• Voice Output: Active (Microsoft Edge British Neural Voice - en-GB-RyanNeural)
+• Voice Output: Active (Microsoft Edge Neural Voice - ${DEFAULTS.voice})
 • Microphone Input: Active (macOS AVFoundation Audio + Gemini Transcribe)
-• Rules: London (LON) Direct Return | 2 Adults | GBP (£) | 3-4★ Hotels
+• Defaults: from ${DEFAULTS.origin ?? '(ask)'} | ${DEFAULTS.adults} adult${DEFAULTS.adults === 1 ? '' : 's'} | ${DEFAULTS.currency}${DEFAULTS.directOnly ? ' | direct only' : ''}
 • Booking: Pre-populated 1-Click Deep Links (Skyscanner, Booking, Expedia, ITA)
 ========================================================================
 `;
@@ -17,13 +18,13 @@ const BANNER = `
 function formatToolCall(toolName: string, args: any): string {
   switch (toolName) {
     case 'search_flights':
-      return `✈️  Searching direct flights LON ➔ ${args.destination} (${args.departureDate} to ${args.returnDate}, 2 adults, GBP)...`;
+      return `✈️  Searching flights ${args.origin ?? DEFAULTS.origin ?? ''} ➔ ${args.destination} (${args.departureDate} to ${args.returnDate})...`;
     case 'search_hotels':
-      return `🏨 Searching 3-4★ hotels in ${args.destination} (${args.checkinDate} to ${args.checkoutDate}, with kitchen/breakfast)...`;
+      return `🏨 Searching hotels in ${args.destination} (${args.checkinDate} to ${args.checkoutDate})...`;
     case 'compare_trip_deal':
       return `📊 Calculating package deal (flights + top hotels) for ${args.destination} (${args.departureDate} to ${args.returnDate})...`;
     case 'find_cheapest_destinations':
-      return `🌍 Scanning lowest European flight deals from London (${args.departureDate} to ${args.returnDate})...`;
+      return `🌍 Scanning cheapest destinations from ${args.origin ?? DEFAULTS.origin ?? 'your origin'} (${args.departureDate} to ${args.returnDate})...`;
     case 'generate_booking_links':
       return `🔗 Generating 1-click booking links for ${args.destination}...`;
     case 'ita_matrix_power_search':
@@ -46,7 +47,7 @@ async function runOneShot(prompt: string, enableVoice: boolean = false) {
         if (Array.isArray(result)) {
           console.log(`\x1b[32m✔ Found ${result.length} options from ${name}\x1b[0m`);
         } else if (result && result.cheapestFlight) {
-          console.log(`\x1b[32m✔ Package generated: Cheapest flight £${result.cheapestFlight.totalPriceGbp} total\x1b[0m`);
+          console.log(`\x1b[32m✔ Package generated: Cheapest flight ${formatMoney(result.cheapestFlight.totalPrice, result.currency)} total\x1b[0m`);
         } else {
           console.log(`\x1b[32m✔ Received data from ${name}\x1b[0m`);
         }
@@ -96,7 +97,7 @@ async function runInteractive() {
         if (Array.isArray(result)) {
           console.log(`\x1b[32m✔ Found ${result.length} options from ${name}\x1b[0m`);
         } else if (result && result.cheapestFlight) {
-          console.log(`\x1b[32m✔ Package calculated: Flights from £${result.cheapestFlight.totalPriceGbp} total\x1b[0m`);
+          console.log(`\x1b[32m✔ Package calculated: Flights from ${formatMoney(result.cheapestFlight.totalPrice, result.currency)} total\x1b[0m`);
         } else {
           console.log(`\x1b[32m✔ Received data from ${name}\x1b[0m`);
         }
@@ -202,7 +203,7 @@ Available Commands & Shortcuts:
       const parts = trimmed.split(/\s+/);
       if (parts.length >= 3) {
         if (activeRecordingSession) activeRecordingSession.cancel();
-        await processQuery(`Scan the cheapest European destinations for direct return flights from London between ${parts[1]} and ${parts[2]} for 2 adults in GBP.`);
+        await processQuery(`Scan the cheapest destinations for return flights between ${parts[1]} and ${parts[2]}.`);
         return;
       }
     }

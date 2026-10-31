@@ -4,11 +4,11 @@ export interface FlightSearchParams {
   destination: string;           // Destination city or airport code (e.g., "BCN", "Barcelona", "Rome", "FCO")
   departureDate: string;         // YYYY-MM-DD
   returnDate: string;            // YYYY-MM-DD
-  origin?: string;               // Default: "LON" (London all airports: LHR, LGW, STN, LTN, LCY)
-  passengers?: number;           // Default: 2 (enforces 2 adults)
-  directOnly?: boolean;          // Default: true (direct non-stop only)
-  currency?: string;             // Default: "GBP"
-  checkedBags?: boolean;         // Default: true (1 checked bag per passenger, return). Only false when user says to ignore checked luggage.
+  origin?: string;               // Default: TRAVEL_ORIGIN (required if unset)
+  passengers?: number;           // Default: TRAVEL_ADULTS or 1
+  directOnly?: boolean;          // Default: TRAVEL_DIRECT_ONLY or false
+  currency?: string;             // Default: TRAVEL_CURRENCY or "USD"
+  checkedBags?: boolean;         // Default: TRAVEL_CHECKED_BAGS or false (adds an estimated 1 checked bag per passenger, return)
   cabinClass?: CabinClass;       // Default: "economy"
   aircraftFilter?: string[];     // Filter for aircraft types, e.g. ["A350", "A380", "777", "787"]
   minDurationHours?: number;     // Filter for minimum flight duration in hours, e.g. 8
@@ -18,8 +18,8 @@ export interface BaggageInfo {
   checkedBagsIncluded: boolean;
   allowance: string;
   fareToBook: string;
-  estimatedBagCostTotalGbp: number;
-  estimatedBagCostPerPersonGbp: number;
+  estimatedBagCostTotal: number;
+  estimatedBagCostPerPerson: number;
   isEstimate: boolean;
   note: string;
 }
@@ -37,9 +37,9 @@ export interface FlightOption {
   duration: string;
   durationHours?: number;
   isDirect: boolean;
-  totalPriceGbp: number;         // Includes checked bags when checkedBags=true
-  pricePerPersonGbp: number;     // Includes checked bags when checkedBags=true
-  baseFareTotalGbp?: number;     // Raw fare from search (usually hand luggage only)
+  totalPrice: number;            // Includes checked bags when checkedBags=true
+  pricePerPerson: number;        // Includes checked bags when checkedBags=true
+  baseFareTotal?: number;        // Raw fare from search (usually hand luggage only)
   baggage?: BaggageInfo;
   currency: string;
   bookingLinks: {
@@ -55,15 +55,15 @@ export interface HotelSearchParams {
   destination: string;           // City name or area
   checkinDate: string;           // YYYY-MM-DD
   checkoutDate: string;          // YYYY-MM-DD
-  adults?: number;               // Default: 2
+  adults?: number;               // Default: TRAVEL_ADULTS or 1
   rooms?: number;                // Default: 1
-  currency?: string;             // Default: "GBP"
+  currency?: string;             // Default: TRAVEL_CURRENCY or "USD"
   minRating?: number;            // e.g. 4.0
-  maxPricePerNight?: number;     // in GBP
-  minStarRating?: number;        // Default: 3 (Always 3 or 4 stars)
-  maxStarRating?: number;        // Default: 4 (Always 3 or 4 stars)
-  requireKitchenOrBreakfast?: boolean; // Default: true (either kitchen or breakfast included)
-  preferredLocations?: string[]; // e.g. ['Jersey City', 'Journal Square', 'Long Island City', 'Manhattan']
+  maxPricePerNight?: number;     // in the search currency
+  minStarRating?: number;        // Default: TRAVEL_MIN_STARS or no limit
+  maxStarRating?: number;        // Default: TRAVEL_MAX_STARS or no limit
+  requireKitchenOrBreakfast?: boolean; // Default: TRAVEL_REQUIRE_KITCHEN_OR_BREAKFAST or false
+  preferredLocations?: string[]; // Neighbourhoods to search instead of the whole destination, e.g. ['Shoreditch', 'Soho']
 }
 
 export interface HotelOption {
@@ -73,8 +73,8 @@ export interface HotelOption {
   userRating?: number;
   ratingText?: string;
   amenities?: string[];         // e.g. ["Breakfast included", "Kitchenette"]
-  pricePerNightGbp: number;
-  totalPriceGbp: number;
+  pricePerNight: number;
+  totalPrice: number;
   currency: string;
   bookingLinks: {
     bookingCom: string;
@@ -94,8 +94,8 @@ export interface TripDeal {
   checkedBagsIncluded: boolean;
   cheapestFlight: FlightOption;
   recommendedHotels: HotelOption[];
-  totalPackagePriceGbp: number;
-  packagePricePerPersonGbp: number;
+  totalPackagePrice: number;
+  packagePricePerPerson: number;
   bookingLinks: {
     skyscannerFlights: string;
     expediaFlights: string;

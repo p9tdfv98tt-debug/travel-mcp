@@ -10,10 +10,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Load env from current directory or parent directory
-dotenv.config();
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
-dotenv.config({ path: path.join(os.homedir(), '.gemini/antigravity/scratch/.env') });
+dotenv.config({ quiet: true });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
+dotenv.config({ path: path.resolve(process.cwd(), '.env'), quiet: true });
+dotenv.config({ path: path.join(os.homedir(), '.gemini/antigravity/scratch/.env'), quiet: true });
 
 export interface AgentCallbacks {
   onToolCall?: (toolName: string, args: any) => void;

@@ -1,3 +1,23 @@
+import { DEFAULTS, formatMoney } from '../config.js';
+
+function defaultsList(): string {
+  const lines = [
+    `- **Currency**: ${DEFAULTS.currency}. Quote every price in ${DEFAULTS.currency} (e.g. ${formatMoney(250, DEFAULTS.currency)}).`,
+    DEFAULTS.origin
+      ? `- **Origin**: ${DEFAULTS.origin}.`
+      : '- **Origin**: not set. If the user has not said where they are flying from, ask before searching flights.',
+    `- **Travellers**: ${DEFAULTS.adults} adult${DEFAULTS.adults === 1 ? '' : 's'}.`,
+    `- **Flights**: ${DEFAULTS.directOnly ? 'direct non-stop only' : 'any number of stops'}; checked bags ${DEFAULTS.checkedBags ? 'included as an estimate (1 per person)' : 'not included'}.`
+  ];
+  const hotel: string[] = [];
+  if (DEFAULTS.minStars !== undefined || DEFAULTS.maxStars !== undefined) {
+    hotel.push(`${DEFAULTS.minStars ?? 1}–${DEFAULTS.maxStars ?? 5} stars`);
+  }
+  if (DEFAULTS.requireKitchenOrBreakfast) hotel.push('kitchen/kitchenette or breakfast included');
+  lines.push(`- **Hotels**: ${hotel.length ? hotel.join(', ') : 'no fixed filters; use what the user asks for'}.`);
+  return lines.join('\n');
+}
+
 export function getTravelAgentSystemPrompt(): string {
   const now = new Date();
   const currentDateStr = now.toISOString().split('T')[0];
@@ -18,31 +38,19 @@ Your mission is to find, optimize, compare, and package the lowest-priced flight
   - If a month has already passed in ${currentYear}, use ${currentYear + 1}.
   - Always verify that the year in every tool argument is ${currentYear} or ${currentYear + 1}!
 
-## CORE UNBREAKABLE DEFAULTS & USER PREFERENCES
-Unless the user explicitly states otherwise:
-1. **Base Currency**: Strictly GBP (£). Every flight, hotel, package, and baggage cost MUST be quoted in GBP.
-2. **Origin**: London (LON), covering Heathrow (LHR), Gatwick (LGW), Stansted (STN), Luton (LTN), and London City (LCY).
-3. **Passengers**: Exactly 2 adults (1 room, double occupancy).
-4. **Flight Routing**: Direct non-stop return (round-trip) flights only. Avoid layovers unless explicitly requested.
-5. **Hotel Quality Standards**:
-   - Strictly 3 or 4 stars. Disqualify hostels, budget motels (e.g., YMCA, Motel 6, Rodeway, Days Inn), and substandard 1-2 star properties.
-   - Amenities: MUST have either a kitchen/kitchenette OR free breakfast (or both).
-   - Rating: Filter for reputable user ratings (typically 7.5+/10 or 3.8+/5.0).
-6. **Checked Luggage (ALWAYS ON)**:
-   - Every flight search MUST include 1 checked bag per person (2 checked bags for 2 adults), outbound and return.
-   - The flight tools do this by default (checkedBags=true): totalPriceGbp = base fare + estimated checked-bag cost. Always quote the bag-inclusive total and the fare family to book.
-   - Only pass checkedBags=false when the user explicitly says to ignore checked luggage for this search.
-7. **Actionable 1-Click Booking Links**:
-   - Never leave the user with just names and prices.
-   - Always provide direct, pre-populated booking deep links across Skyscanner, Booking.com, Hotels.com, Expedia, and ITA Matrix so the user can verify and complete the reservation immediately.
+## DEFAULTS
+Unless the user states otherwise:
+${defaultsList()}
+- **Actionable booking links**: never leave the user with just names and prices. Always provide the pre-populated booking links (Skyscanner, Booking.com, Hotels.com, Expedia, ITA Matrix) so they can verify and book.
+- If a checked-bag estimate is included, quote the bag-inclusive total and the fare family to book.
 
 ## AVAILABLE TOOLS
 You have access to 6 specialized travel tools:
-1. \`find_cheapest_destinations\`: Scans popular European destinations from London for direct return flights on given dates to find the lowest-cost getaways. (BEST tool when user is flexible or asks for cheap travels in a given month).
-2. \`search_flights\`: Searches live direct return flights from London for 2 people in GBP with flight times, airline names, and booking URLs.
-3. \`search_hotels\`: Searches live 3-4★ hotels with kitchen/breakfast in GBP for 2 adults with nightly and total prices.
-4. \`compare_trip_deal\`: Aggregates the lowest direct flight + recommended hotels into a total package estimate for 2 people with per-person breakdowns.
-5. \`generate_booking_links\`: Generates verified 1-click deep links across Skyscanner, Booking.com, Hotels.com, Expedia, and ITA Matrix.
+1. \`find_cheapest_destinations\`: Scans a list of destinations for return flights on given dates to find the lowest-cost trips. (BEST tool when the user is flexible on destination.)
+2. \`search_flights\`: Searches live return flights with times, airlines, prices and booking URLs.
+3. \`search_hotels\`: Searches live hotels with nightly and total prices, with optional star, amenity and neighbourhood filters.
+4. \`compare_trip_deal\`: Combines the cheapest flight with the best-priced hotels into a package estimate with per-person breakdown.
+5. \`generate_booking_links\`: Generates pre-populated links across Skyscanner, Booking.com, Hotels.com, Expedia, and ITA Matrix.
 6. \`ita_matrix_power_search\`: Generates advanced ITA Software routing syntax and BookWithMatrix checkout links.
 
 ## REASONING & STRATEGY GUIDELINES

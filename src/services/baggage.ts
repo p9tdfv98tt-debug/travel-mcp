@@ -3,14 +3,15 @@ import { BaggageInfo, FlightOption } from '../types.js';
 /**
  * Checked-baggage pricing.
  *
- * USER DEFAULT: every search includes 1 x 23kg checked bag PER PASSENGER (return),
- * unless the caller explicitly passes `checkedBags: false`.
+ * With `checkedBags: true` (or TRAVEL_CHECKED_BAGS=true), every fare includes an
+ * estimate for 1 x 23kg checked bag PER PASSENGER (return).
  *
  * Google Flights' server-rendered results show the cheapest (usually "basic" /
  * hand-luggage-only) fare and expose no reliable baggage data, so we add a
  * per-airline estimate of what it costs to get a checked bag – either the
  * bag fee, or the upgrade to the cheapest fare family that includes one.
- * Figures are GBP, per passenger, for the full RETURN trip.
+ * Figures are GBP, per passenger, for the full RETURN trip, and are converted to
+ * the search currency with the approximate rates below.
  */
 interface AirlineBagRule {
   match: RegExp;
@@ -40,6 +41,27 @@ const AIRLINE_BAG_RULES: AirlineBagRule[] = [
   { match: /ita airways/i, shortHaul: 60, longHaul: 120, fareToBook: 'Classic fare (1 x 23kg)' }
 ];
 
+// Approximate units of each currency per 1 GBP. Bag costs are rough estimates
+// anyway; for currencies not listed no bag cost is added to the fare.
+const GBP_RATES: Record<string, number> = {
+  GBP: 1,
+  USD: 1.3,
+  EUR: 1.17,
+  CAD: 1.8,
+  AUD: 2,
+  CHF: 1.1,
+  JPY: 195,
+  BRL: 7.2,
+  SEK: 13.8,
+  NOK: 14,
+  DKK: 8.7
+};
+
+function fromGbp(amountGbp: number, currency: string): number | undefined {
+  const rate = GBP_RATES[currency.toUpperCase()];
+  return rate ? Math.round(amountGbp * rate) : undefined;
+}
+
 const DEFAULT_SHORT_HAUL = 75;
 const DEFAULT_LONG_HAUL = 120;
 const LONG_HAUL_MIN_HOURS = 6;
@@ -54,51 +76,56 @@ export function parseDurationHours(duration: string): number {
 export function estimateCheckedBagCost(
   airline: string,
   duration: string,
-  passengers: number
+  passengers: number,
+  currency: string = 'GBP'
 ): BaggageInfo {
   const longHaul = parseDurationHours(duration) >= LONG_HAUL_MIN_HOURS;
   const rule = AIRLINE_BAG_RULES.find((r) => r.match.test(airline));
-  const perPerson = rule
+  const perPersonGbp = rule
     ? longHaul ? rule.longHaul : rule.shortHaul
     : longHaul ? DEFAULT_LONG_HAUL : DEFAULT_SHORT_HAUL;
+  const converted = fromGbp(perPersonGbp, currency);
+  const perPerson = converted ?? 0;
+  const currencyNote = converted === undefined ? ` No bag estimate available in ${currency}; add the fee at checkout.` : '';
 
   return {
     checkedBagsIncluded: true,
     allowance: `${passengers} x checked bag (1 per person, ~23kg), outbound + return`,
     fareToBook: rule ? rule.fareToBook : 'Choose the cheapest fare that includes 1 checked bag per person',
-    estimatedBagCostTotalGbp: perPerson * passengers,
-    estimatedBagCostPerPersonGbp: perPerson,
+    estimatedBagCostTotal: perPerson * passengers,
+    estimatedBagCostPerPerson: perPerson,
     isEstimate: true,
     note: rule
-      ? `Base fare is likely hand-luggage only. Bag cost is an estimate for ${airline} (${longHaul ? 'long-haul' : 'short-haul'}); confirm at checkout.`
-      : `Airline not in baggage table – generic ${longHaul ? 'long-haul' : 'short-haul'} estimate used; confirm at checkout.`
+      ? `Base fare is likely hand-luggage only. Bag cost is an estimate for ${airline} (${longHaul ? 'long-haul' : 'short-haul'}); confirm at checkout.${currencyNote}`
+      : `Airline not in baggage table – generic ${longHaul ? 'long-haul' : 'short-haul'} estimate used; confirm at checkout.${currencyNote}`
   };
 }
 
 /**
  * Apply the checked-bag policy to a list of flights.
- * - checkedBags=true (default): totalPriceGbp becomes base fare + estimated bags, re-sorted.
+ * - checkedBags=true: totalPrice becomes base fare + estimated bags, re-sorted.
  * - checkedBags=false: base fare kept, flagged as hand luggage only.
  */
 export function applyBaggagePolicy(
   flights: FlightOption[],
   passengers: number,
-  checkedBags: boolean
+  checkedBags: boolean,
+  currency: string = 'GBP'
 ): FlightOption[] {
   const updated = flights.map((f) => {
-    const baseFareTotalGbp = f.baseFareTotalGbp ?? f.totalPriceGbp;
+    const baseFareTotal = f.baseFareTotal ?? f.totalPrice;
     if (f.cabinClass === 'business' || f.cabinClass === 'first') {
       return {
         ...f,
-        baseFareTotalGbp,
-        totalPriceGbp: baseFareTotalGbp,
-        pricePerPersonGbp: Math.round(baseFareTotalGbp / passengers),
+        baseFareTotal,
+        totalPrice: baseFareTotal,
+        pricePerPerson: Math.round(baseFareTotal / passengers),
         baggage: {
           checkedBagsIncluded: true,
           allowance: `${passengers * 2} x checked bags (${passengers} x 2 bags, ~32kg each) INCLUDED with ${f.cabinClass === 'business' ? 'Business' : 'First'} Class`,
           fareToBook: `${f.cabinClass === 'business' ? 'Business' : 'First'} Class (Full baggage allowance included)`,
-          estimatedBagCostTotalGbp: 0,
-          estimatedBagCostPerPersonGbp: 0,
+          estimatedBagCostTotal: 0,
+          estimatedBagCostPerPerson: 0,
           isEstimate: false,
           note: `Checked baggage is included in all standard ${f.cabinClass === 'business' ? 'Business' : 'First'} Class fares.`
         }
@@ -107,31 +134,31 @@ export function applyBaggagePolicy(
     if (!checkedBags) {
       return {
         ...f,
-        baseFareTotalGbp,
-        totalPriceGbp: baseFareTotalGbp,
-        pricePerPersonGbp: Math.round(baseFareTotalGbp / passengers),
+        baseFareTotal,
+        totalPrice: baseFareTotal,
+        pricePerPerson: Math.round(baseFareTotal / passengers),
         baggage: {
           checkedBagsIncluded: false,
           allowance: 'Checked luggage ignored for this search (fare shown is likely hand luggage only)',
           fareToBook: 'Cheapest available fare',
-          estimatedBagCostTotalGbp: 0,
-          estimatedBagCostPerPersonGbp: 0,
+          estimatedBagCostTotal: 0,
+          estimatedBagCostPerPerson: 0,
           isEstimate: false,
-          note: 'User asked to ignore checked luggage for this search.'
+          note: 'Checked luggage not included in this search.'
         }
       };
     }
-    const baggage = estimateCheckedBagCost(f.airline, f.duration, passengers);
-    const total = baseFareTotalGbp + baggage.estimatedBagCostTotalGbp;
+    const baggage = estimateCheckedBagCost(f.airline, f.duration, passengers, currency);
+    const total = baseFareTotal + baggage.estimatedBagCostTotal;
     return {
       ...f,
-      baseFareTotalGbp,
-      totalPriceGbp: total,
-      pricePerPersonGbp: Math.round(total / passengers),
+      baseFareTotal,
+      totalPrice: total,
+      pricePerPerson: Math.round(total / passengers),
       baggage
     };
   });
 
-  updated.sort((a, b) => a.totalPriceGbp - b.totalPriceGbp);
+  updated.sort((a, b) => a.totalPrice - b.totalPrice);
   return updated;
 }

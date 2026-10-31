@@ -4,43 +4,50 @@ import { searchHotels } from '../services/hotelSearch.js';
 import { compareTripDeal, findCheapestDestinations } from '../services/dealFinder.js';
 import { buildAllBookingLinks } from '../services/urlBuilder.js';
 import { generateITAMatrixCommand } from '../services/itaMatrix.js';
+import { DEFAULTS, resolveOrigin } from '../config.js';
+
+const p = {
+  destination: { type: Type.STRING, description: 'Destination city or airport code (e.g., "Barcelona", "Tokyo", "BCN", "JFK")' },
+  departureDate: { type: Type.STRING, description: 'Departure date in YYYY-MM-DD format' },
+  returnDate: { type: Type.STRING, description: 'Return date in YYYY-MM-DD format' },
+  origin: {
+    type: Type.STRING,
+    description: DEFAULTS.origin
+      ? `Departure city or airport code (Default: "${DEFAULTS.origin}")`
+      : 'Departure city or airport code (required; ask the user if unknown)'
+  },
+  passengers: { type: Type.NUMBER, description: `Number of adult travellers (Default: ${DEFAULTS.adults})` },
+  directOnly: { type: Type.BOOLEAN, description: `Non-stop flights only (Default: ${DEFAULTS.directOnly})` },
+  checkedBags: {
+    type: Type.BOOLEAN,
+    description: `Add an estimated cost for 1 checked bag per passenger, both ways (Default: ${DEFAULTS.checkedBags})`
+  },
+  currency: { type: Type.STRING, description: `ISO currency code (Default: "${DEFAULTS.currency}")` },
+  minStarRating: { type: Type.NUMBER, description: `Minimum hotel star rating (Default: ${DEFAULTS.minStars ?? 'no limit'})` },
+  maxStarRating: { type: Type.NUMBER, description: `Maximum hotel star rating (Default: ${DEFAULTS.maxStars ?? 'no limit'})` },
+  requireKitchenOrBreakfast: {
+    type: Type.BOOLEAN,
+    description: `Only hotels with a kitchen/kitchenette or breakfast (Default: ${DEFAULTS.requireKitchenOrBreakfast})`
+  },
+  preferredLocations: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Neighbourhoods or districts to search' }
+};
 
 export const travelToolDeclarations: FunctionDeclaration[] = [
   {
     name: 'search_flights',
     description:
-      'Search real-time low-price direct return flights from London for 2 people in GBP (£). Returns airline options, schedule, flight duration, total price for 2 people, per-person price, and booking links.',
+      'Search real-time low-price return flights. Returns airline options, schedule, flight duration, total and per-person price, and booking links.',
     parameters: {
       type: Type.OBJECT,
       properties: {
-        destination: {
-          type: Type.STRING,
-          description: 'Destination city or airport code (e.g., "Barcelona", "Rome", "Madeira", "FNC", "BCN")'
-        },
-        departureDate: {
-          type: Type.STRING,
-          description: 'Departure date in YYYY-MM-DD format'
-        },
-        returnDate: {
-          type: Type.STRING,
-          description: 'Return date in YYYY-MM-DD format'
-        },
-        origin: {
-          type: Type.STRING,
-          description: 'Departure city or airport code (Default: "LON" for London airports)'
-        },
-        passengers: {
-          type: Type.NUMBER,
-          description: 'Number of adult passengers (Default: 2)'
-        },
-        directOnly: {
-          type: Type.BOOLEAN,
-          description: 'Filter for direct non-stop flights only (Default: true)'
-        },
-        currency: {
-          type: Type.STRING,
-          description: 'Currency code (Default: "GBP")'
-        }
+        destination: p.destination,
+        departureDate: p.departureDate,
+        returnDate: p.returnDate,
+        origin: p.origin,
+        passengers: p.passengers,
+        directOnly: p.directOnly,
+        checkedBags: p.checkedBags,
+        currency: p.currency
       },
       required: ['destination', 'departureDate', 'returnDate']
     }
@@ -48,51 +55,20 @@ export const travelToolDeclarations: FunctionDeclaration[] = [
   {
     name: 'search_hotels',
     description:
-      'Search real-time hotel options in GBP (£) for 2 adults. Enforces 3 or 4 stars, kitchen/kitchenette or breakfast included. Returns property names, star ratings, amenities, review scores, nightly and total stay prices, and booking links.',
+      'Search real-time hotel options with optional star, amenity and neighbourhood filters. Returns property names, star ratings, amenities, review scores, nightly and total stay prices, and booking links.',
     parameters: {
       type: Type.OBJECT,
       properties: {
-        destination: {
-          type: Type.STRING,
-          description: 'Destination city or location (e.g., "New York", "Rome", "Barcelona", "Funchal")'
-        },
-        checkinDate: {
-          type: Type.STRING,
-          description: 'Check-in date in YYYY-MM-DD format'
-        },
-        checkoutDate: {
-          type: Type.STRING,
-          description: 'Check-out date in YYYY-MM-DD format'
-        },
-        adults: {
-          type: Type.NUMBER,
-          description: 'Number of adult guests (Default: 2)'
-        },
-        rooms: {
-          type: Type.NUMBER,
-          description: 'Number of rooms (Default: 1)'
-        },
-        currency: {
-          type: Type.STRING,
-          description: 'Currency code (Default: "GBP")'
-        },
-        minStarRating: {
-          type: Type.NUMBER,
-          description: 'Minimum star rating (Default: 3)'
-        },
-        maxStarRating: {
-          type: Type.NUMBER,
-          description: 'Maximum star rating (Default: 4)'
-        },
-        requireKitchenOrBreakfast: {
-          type: Type.BOOLEAN,
-          description: 'Require kitchen/kitchenette or breakfast included (Default: true)'
-        },
-        preferredLocations: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING },
-          description: 'Preferred neighborhoods or districts'
-        }
+        destination: p.destination,
+        checkinDate: { type: Type.STRING, description: 'Check-in date in YYYY-MM-DD format' },
+        checkoutDate: { type: Type.STRING, description: 'Check-out date in YYYY-MM-DD format' },
+        adults: { type: Type.NUMBER, description: `Number of adult guests (Default: ${DEFAULTS.adults})` },
+        rooms: { type: Type.NUMBER, description: 'Number of rooms (Default: 1)' },
+        currency: p.currency,
+        minStarRating: p.minStarRating,
+        maxStarRating: p.maxStarRating,
+        requireKitchenOrBreakfast: p.requireKitchenOrBreakfast,
+        preferredLocations: p.preferredLocations
       },
       required: ['destination', 'checkinDate', 'checkoutDate']
     }
@@ -100,87 +76,40 @@ export const travelToolDeclarations: FunctionDeclaration[] = [
   {
     name: 'compare_trip_deal',
     description:
-      'Compare and aggregate direct non-stop return flights and top 3-4★ hotels into complete package deals for 2 people in GBP (£) with per-person breakdown and direct booking links.',
+      'Combine the cheapest matching return flight with the best-priced hotels into a package estimate with per-person breakdown and booking links.',
     parameters: {
       type: Type.OBJECT,
       properties: {
-        destination: {
-          type: Type.STRING,
-          description: 'Destination city or airport code (e.g., "New York", "Barcelona", "Madeira")'
-        },
-        departureDate: {
-          type: Type.STRING,
-          description: 'Departure date in YYYY-MM-DD format'
-        },
-        returnDate: {
-          type: Type.STRING,
-          description: 'Return date in YYYY-MM-DD format'
-        },
-        origin: {
-          type: Type.STRING,
-          description: 'Departure city or airport code (Default: "LON")'
-        },
-        passengers: {
-          type: Type.NUMBER,
-          description: 'Number of passengers (Default: 2)'
-        },
-        currency: {
-          type: Type.STRING,
-          description: 'Currency code (Default: "GBP")'
-        },
-        preferredLocations: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING },
-          description: 'Preferred neighborhoods or districts'
-        },
-        minStarRating: {
-          type: Type.NUMBER,
-          description: 'Minimum star rating (Default: 3)'
-        },
-        maxStarRating: {
-          type: Type.NUMBER,
-          description: 'Maximum star rating (Default: 4)'
-        },
-        requireKitchenOrBreakfast: {
-          type: Type.BOOLEAN,
-          description: 'Require kitchen/kitchenette or breakfast included (Default: true)'
-        }
+        destination: p.destination,
+        departureDate: p.departureDate,
+        returnDate: p.returnDate,
+        origin: p.origin,
+        passengers: p.passengers,
+        directOnly: p.directOnly,
+        checkedBags: p.checkedBags,
+        currency: p.currency,
+        preferredLocations: p.preferredLocations,
+        minStarRating: p.minStarRating,
+        maxStarRating: p.maxStarRating,
+        requireKitchenOrBreakfast: p.requireKitchenOrBreakfast
       },
       required: ['destination', 'departureDate', 'returnDate']
     }
   },
   {
     name: 'find_cheapest_destinations',
-    description:
-      'Scan popular European destinations from London for direct return flights for 2 people on given dates and rank them by lowest total GBP price.',
+    description: `Scan destinations for return flights on given dates and rank them by lowest total price. Without a list, scans: ${DEFAULTS.dealDestinations.join(', ')}.`,
     parameters: {
       type: Type.OBJECT,
       properties: {
-        departureDate: {
-          type: Type.STRING,
-          description: 'Departure date in YYYY-MM-DD format'
-        },
-        returnDate: {
-          type: Type.STRING,
-          description: 'Return date in YYYY-MM-DD format'
-        },
-        destinations: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING },
-          description: 'Custom list of destination cities to scan'
-        },
-        origin: {
-          type: Type.STRING,
-          description: 'Departure city or airport code (Default: "LON")'
-        },
-        passengers: {
-          type: Type.NUMBER,
-          description: 'Number of adult passengers (Default: 2)'
-        },
-        currency: {
-          type: Type.STRING,
-          description: 'Currency code (Default: "GBP")'
-        }
+        departureDate: p.departureDate,
+        returnDate: p.returnDate,
+        destinations: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Destination cities to scan' },
+        origin: p.origin,
+        passengers: p.passengers,
+        directOnly: p.directOnly,
+        checkedBags: p.checkedBags,
+        currency: p.currency
       },
       required: ['departureDate', 'returnDate']
     }
@@ -188,34 +117,17 @@ export const travelToolDeclarations: FunctionDeclaration[] = [
   {
     name: 'generate_booking_links',
     description:
-      'Generate pre-populated, verified 1-click booking links across Skyscanner, Booking.com, Hotels.com, Expedia, and ITA Matrix for 2 adults in GBP.',
+      'Generate pre-populated booking links across Skyscanner, Booking.com, Hotels.com, Expedia, Google, and ITA Matrix.',
     parameters: {
       type: Type.OBJECT,
       properties: {
-        destination: {
-          type: Type.STRING,
-          description: 'Destination city or airport code'
-        },
-        departureDate: {
-          type: Type.STRING,
-          description: 'Departure date in YYYY-MM-DD format'
-        },
-        returnDate: {
-          type: Type.STRING,
-          description: 'Return date in YYYY-MM-DD format'
-        },
-        origin: {
-          type: Type.STRING,
-          description: 'Departure city or airport code (Default: "LON")'
-        },
-        passengers: {
-          type: Type.NUMBER,
-          description: 'Number of passengers (Default: 2)'
-        },
-        currency: {
-          type: Type.STRING,
-          description: 'Currency code (Default: "GBP")'
-        }
+        destination: p.destination,
+        departureDate: p.departureDate,
+        returnDate: p.returnDate,
+        origin: p.origin,
+        passengers: p.passengers,
+        directOnly: p.directOnly,
+        currency: p.currency
       },
       required: ['destination', 'departureDate', 'returnDate']
     }
@@ -227,32 +139,15 @@ export const travelToolDeclarations: FunctionDeclaration[] = [
     parameters: {
       type: Type.OBJECT,
       properties: {
-        origin: {
-          type: Type.STRING,
-          description: 'Origin airport code (Default: "LON")'
-        },
-        destination: {
-          type: Type.STRING,
-          description: 'Destination airport code (e.g., "BCN", "JFK", "FNC")'
-        },
-        departureDate: {
-          type: Type.STRING,
-          description: 'Departure date in YYYY-MM-DD format'
-        },
-        returnDate: {
-          type: Type.STRING,
-          description: 'Return date in YYYY-MM-DD format'
-        },
-        passengers: {
-          type: Type.NUMBER,
-          description: 'Number of passengers (Default: 2)'
-        },
-        currency: {
-          type: Type.STRING,
-          description: 'Currency code (Default: "GBP")'
-        }
+        origin: p.origin,
+        destination: p.destination,
+        departureDate: p.departureDate,
+        returnDate: p.returnDate,
+        passengers: p.passengers,
+        directOnly: p.directOnly,
+        currency: p.currency
       },
-      required: ['origin', 'destination', 'departureDate', 'returnDate']
+      required: ['destination', 'departureDate', 'returnDate']
     }
   }
 ];
@@ -283,6 +178,10 @@ export async function executeTravelTool(toolName: string, args: any): Promise<an
   const retDate = args.returnDate ? ensureFutureDate(args.returnDate) : undefined;
   const checkin = args.checkinDate ? ensureFutureDate(args.checkinDate) : undefined;
   const checkout = args.checkoutDate ? ensureFutureDate(args.checkoutDate) : undefined;
+  const passengers = args.passengers ?? DEFAULTS.adults;
+  const currency = args.currency || DEFAULTS.currency;
+  const directOnly = args.directOnly ?? DEFAULTS.directOnly;
+  const checkedBags = args.checkedBags ?? DEFAULTS.checkedBags;
 
   switch (toolName) {
     case 'search_flights':
@@ -290,10 +189,11 @@ export async function executeTravelTool(toolName: string, args: any): Promise<an
         destination: args.destination,
         departureDate: depDate!,
         returnDate: retDate!,
-        origin: args.origin || 'LON',
-        passengers: args.passengers ?? 2,
-        directOnly: args.directOnly ?? true,
-        currency: args.currency || 'GBP'
+        origin: resolveOrigin(args.origin),
+        passengers,
+        directOnly,
+        checkedBags,
+        currency
       });
 
     case 'search_hotels':
@@ -301,12 +201,12 @@ export async function executeTravelTool(toolName: string, args: any): Promise<an
         destination: args.destination,
         checkinDate: checkin!,
         checkoutDate: checkout!,
-        adults: args.adults ?? 2,
+        adults: args.adults ?? DEFAULTS.adults,
         rooms: args.rooms ?? 1,
-        currency: args.currency || 'GBP',
-        minStarRating: args.minStarRating ?? 3,
-        maxStarRating: args.maxStarRating ?? 4,
-        requireKitchenOrBreakfast: args.requireKitchenOrBreakfast ?? true,
+        currency,
+        minStarRating: args.minStarRating,
+        maxStarRating: args.maxStarRating,
+        requireKitchenOrBreakfast: args.requireKitchenOrBreakfast,
         preferredLocations: args.preferredLocations
       });
 
@@ -315,13 +215,15 @@ export async function executeTravelTool(toolName: string, args: any): Promise<an
         args.destination,
         depDate!,
         retDate!,
-        args.origin || 'LON',
-        args.passengers ?? 2,
-        args.currency || 'GBP',
+        args.origin,
+        passengers,
+        currency,
         args.preferredLocations,
-        args.minStarRating ?? 3,
-        args.maxStarRating ?? 4,
-        args.requireKitchenOrBreakfast ?? true
+        args.minStarRating ?? DEFAULTS.minStars,
+        args.maxStarRating ?? DEFAULTS.maxStars,
+        args.requireKitchenOrBreakfast ?? DEFAULTS.requireKitchenOrBreakfast,
+        checkedBags,
+        directOnly
       );
 
     case 'find_cheapest_destinations':
@@ -329,9 +231,11 @@ export async function executeTravelTool(toolName: string, args: any): Promise<an
         depDate!,
         retDate!,
         args.destinations,
-        args.origin || 'LON',
-        args.passengers ?? 2,
-        args.currency || 'GBP'
+        args.origin,
+        passengers,
+        currency,
+        checkedBags,
+        directOnly
       );
 
     case 'generate_booking_links':
@@ -339,19 +243,24 @@ export async function executeTravelTool(toolName: string, args: any): Promise<an
         args.destination,
         depDate!,
         retDate!,
-        args.origin || 'LON',
-        args.passengers ?? 2,
-        args.currency || 'GBP'
+        resolveOrigin(args.origin),
+        passengers,
+        currency,
+        directOnly
       );
 
     case 'ita_matrix_power_search':
       return generateITAMatrixCommand(
-        args.origin || 'LON',
         args.destination,
         depDate!,
         retDate!,
-        args.passengers ?? 2,
-        args.currency || 'GBP'
+        resolveOrigin(args.origin),
+        passengers,
+        currency,
+        undefined,
+        'economy',
+        undefined,
+        directOnly
       );
 
     default:
