@@ -1,0 +1,44 @@
+{
+  "name": "travel-mcp",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) Server for finding and buying low-price flights and hotels across Skyscanner, Booking.com, Hotels.com, Expedia, and ITA Software Matrix",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "travel-mcp": "./dist/index.js",
+    "travel-agent": "./dist/agent/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "agent": "tsx src/agent/cli.ts",
+    "agent:dist": "node dist/agent/cli.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "travel",
+    "flights",
+    "hotels",
+    "skyscanner",
+    "booking",
+    "expedia",
+    "ita-matrix"
+  ],
+  "author": "Antigravity",
+  "license": "MIT",
+  "dependencies": {
+    "@google/genai": "^2.22.0",
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "cheerio": "^1.0.0",
+    "dotenv": "^17.4.2",
+    "node-edge-tts": "^1.2.10",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}
